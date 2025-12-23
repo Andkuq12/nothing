@@ -1,4 +1,4 @@
-endtime=load('return os.time{year=2025, month=12, day=1, hour=0,min=0, sec=0}')()
+endtime=load('return os.time{year=2025, month=12, day=30, hour=0,min=0, sec=0}')()
 if(os.time()<endtime) then
 
 Config = {
