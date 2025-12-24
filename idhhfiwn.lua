@@ -1,56 +1,6 @@
-endtime=load('return os.time{year=2025, month=12, day=30, hour=0,min=0, sec=0}')()
+endtime=load('return os.time{year=2026, month=12, day=1, hour=0,min=0, sec=0}')()
 if(os.time()<endtime) then
 
-Config = {
-    mode = {
-        direction = "Vertical",
-        planting_direction = "BottomToTop",
-        plant_type = "Plat",
-        harvest_type = 1,
-        order_mode = "PTHT"
-    },
-    world = {
-        name = "ZONA",
-        size_x = 99,
-        size_y = 114,
-        pathfind_plant = true,
-        pathfind_harvest = true
-    },
-    delay = {
-        plant = 10,
-        harvest = 10,
-        remote = 5000,
-        reconnect = 60000
-    },
-    item = {
-        plant = 1044,
-        harvest = 1044,
-        platform = 0,
-        magplant = 9850,
-        background = 14
-    },
-    features = {
-        use_uws = true,
-        auto_take_remote = true,
-        auto_take_empty = true,
-        use_counter = false,
-        auto_restart = true,
-        use_splice = false
-    },
-    splice = {
-        mode = "Magplant",
-        seed1 = 1044,
-        seed2 = 1062,
-        magplant1 = 9850,
-        magplant2 = 9850
-    },
-    counter = {
-        limit = 10
-    },
-    toggle = {
-        start = false
-    }
-}
 
 isRunning = false
 stopRequested = false
@@ -539,89 +489,1123 @@ moduleJSON = ([[
 }
 ]]):gsub("`id", "!"..randomInt)
 
+function isInTargetWorld()
+    local worldName = GetWorldName()
+    if worldName then
+        return worldName == Config.world.name
+    end
+    return false
+end
+
+function reconnect()
+    log("Reconnecting to " .. Config.world.name)
+    sendPacket(3, "action|join_request\nname|" .. Config.world.name .. "|\ninvitedWorld|0")
+    
+    local timeout = 10
+    local startTime = os.time()
+    
+    while os.time() - startTime < timeout do
+        if isInTargetWorld() then
+            log("Successfully reconnected!")
+            return true
+        end
+        
+        if stopRequested or not isRunning then
+            return false
+        end
+        
+        local delayStart = os.time()
+        while os.time() - delayStart < 0.5 do end
+    end
+    
+    log("Reconnect timeout!")
+    return false
+end
+
+function scanForMagplants()
+    foundMagplants = {}
+    for x = 0, Config.world.size_x do
+        for y = Config.world.size_y, 0, -1 do
+            if stopRequested then return 0 end
+            local tile = getTile(x, y)
+            if tile and tile.fg == Config.item.magplant then
+                if tile.bg == Config.item.background then
+                    table.insert(foundMagplants, {x = x, y = y, bg = tile.bg})
+                end
+            end
+        end
+    end
+    log("Found " .. #foundMagplants .. " magplants")
+    magplantIndex = 1
+    return #foundMagplants
+end
+
+function takeMagplant()
+    if #foundMagplants == 0 then
+        log("No magplants found")
+        return false
+    end
+    if magplantIndex > #foundMagplants then
+        log("All magplants taken, resetting...")
+        magplantIndex = 1
+        return false
+    end
+    local mag = foundMagplants[magplantIndex]
+    log("Taking magplant " .. magplantIndex .. " at " .. mag.x .. "," .. mag.y)
+    local tile = getTile(mag.x, mag.y)
+    if tile and tile.fg == Config.item.magplant then
+        sendPacket(2, "action|dialog_return\ndialog_name|itemsucker_block\ntilex|" .. mag.x .. "|\ntiley|" .. mag.y .. "|\nbuttonClicked|getplantationdevice\n\nchk_enablesucking|1\n")
+        local start = os.time()
+        while os.time() - start < Config.delay.remote / 1000 do end
+        return true
+    else
+        log("Magplant not found")
+        magplantIndex = magplantIndex + 1
+        local start = os.time()
+        while os.time() - start < 1 do end
+        return takeMagplant()
+    end
+end
+
+function findPath(x, y)
+    if stopRequested then return end
+    local localPlayer = getLocal()
+    if not localPlayer then return end
+    local px = math.floor(localPlayer.posX / 32)
+    local py = math.floor(localPlayer.posY / 32)
+    local jarax = x - px
+    local jaray = y - py
+    if jaray > 6 then
+        for i = 1, math.floor(jaray / 6) do
+            if stopRequested then return end
+            py = py + 6
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+            FindPath(px, py)
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+        end
+    elseif jaray < -6 then
+        for i = 1, math.floor(jaray / -6) do
+            if stopRequested then return end
+            py = py - 6
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+            FindPath(px, py)
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+        end
+    end
+    if jarax > 8 then
+        for i = 1, math.floor(jarax / 6) do
+            if stopRequested then return end
+            px = px + 6
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+            FindPath(px, py)
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+        end
+    elseif jarax < -6 then
+        for i = 1, math.floor(jarax / -6) do
+            if stopRequested then return end
+            px = px - 6
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+            FindPath(px, py)
+            local start = os.time()
+            while os.time() - start < 0.02 do end
+        end
+    end
+    if stopRequested then return end
+    local start = os.time()
+    while os.time() - start < 0.02 do end
+    FindPath(x, y)
+    local start = os.time()
+    while os.time() - start < 0.02 do end
+end
+
+function rawPacket(type, value, x, y)
+    local player = getLocal()
+    if not player then return end
+    
+    local packet = {
+        type = type,
+        value = value,
+        x = x * 32,
+        y = y * 32,
+        px = x,
+        py = y,
+        state = 32,
+        netid = player.netID
+    }
+    sendPacketRaw(false, packet)
+end
+
+function plantTile(x, y, id)
+    if stopRequested then return end
+    rawPacket(0, 0, x, y)
+    rawPacket(3, id, x, y)
+end
+
+function punch(x, y)
+    if stopRequested then return end
+    plantTile(x, y, 18)
+end
+
+function fullCountReadyTrees()
+    if stopRequested then return 0 end
+    local treeCount = 0
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    for x = 0, Config.world.size_x do
+        if stopRequested then break end
+        for y = startY, endY, stepY do
+            if stopRequested then break end
+            local tile = getTile(x, y)
+            if tile and tile.fg == Config.item.harvest then
+                if tile.extra and tile.extra.progress and tile.extra.progress >= 1.0 then
+                    treeCount = treeCount + 1
+                end
+            end
+        end
+    end
+    lastTreeCount = treeCount
+    return treeCount
+end
+
+function findPathOT(x, y)
+    if not Config.world.pathfind_plant or stopRequested then return end
+    FindPath(x, y)
+end
+
+function findPathHT(x, y)
+    if not Config.world.pathfind_harvest or stopRequested then return end
+    FindPath(x, y)
+end
+
+function findTilesWithSeed(seedID)
+    local tiles = {}
+    for x = 0, Config.world.size_x do
+        for y = 0, Config.world.size_y do
+            local tile = getTile(x, y)
+            if tile and tile.fg == seedID then
+                table.insert(tiles, {x = x, y = y})
+            end
+        end
+    end
+    return tiles
+end
+
+function plantSpliceWithMagplant()
+    log("Taking magplant 1...")
+    if not takeMagplant() then
+        log("Failed to take magplant 1")
+        return false
+    end
+    log("Planting with seed1...")
+    if Config.mode.plant_type == "Plat" then
+        plantOnPlatSplicemag()
+    else
+        plantInAirSplicemag()
+    end
+    log("Taking magplant 2...")
+    if not takeMagplant() then
+        log("Failed to take magplant 2")
+        return false
+    end
+    local seed1Tiles = findTilesWithSeed(Config.splice.seed1)
+    for _, tile in ipairs(seed1Tiles) do
+        if stopRequested then break end
+        local tile = getTile(tile.x, tile.y)
+        if tile and tile.fg == Config.splice.seed1 then
+            plantTile(tile.x, tile.y, Config.splice.seed2)
+            findPathOT(tile.x, tile.y)
+            local start = os.time()
+            while os.time() - start < Config.delay.plant / 1000 do end
+        end
+    end
+    return true
+end
+
+function plantSpliceNormal()
+    log("Planting seed1...")
+    if Config.mode.plant_type == "Plat" then
+        plantOnPlatSplice()
+    else
+        plantInAirSplice()
+    end
+    local seed1Tiles = findTilesWithSeed(Config.splice.seed1)
+    for _, tile in ipairs(seed1Tiles) do
+        if stopRequested then break end
+        local tile = getTile(tile.x, tile.y)
+        if tile and tile.fg == Config.splice.seed1 then
+            plantTile(tile.x, tile.y, Config.splice.seed2)
+            findPathOT(tile.x, tile.y)
+            local start = os.time()
+            while os.time() - start < Config.delay.plant / 1000 do end
+        end
+    end
+    return true
+end
+
+function plantOnPlat()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    if Config.mode.direction == "Vertical" then
+        for x = 0, Config.world.size_x do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == Config.item.platform and tileAbove and tileAbove.fg == 0 then
+                    plantTile(x, y - 1, Config.item.plant)
+                    findPathOT(x, y - 1)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    else
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == Config.item.platform and tileAbove and tileAbove.fg == 0 then
+                    plantTile(x, y - 1, Config.item.plant)
+                    findPathOT(x, y - 1)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    end
+end
+
+function plantInAir()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    if Config.mode.direction == "Vertical" then
+        for x = 0, Config.world.size_x do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == 0 then
+                    plantTile(x, y, Config.item.plant)
+                    findPathOT(x, y)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    else
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == 0 then
+                    plantTile(x, y, Config.item.plant)
+                    findPathOT(x, y)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    end
+end
+
+function plantOnPlatSplice()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    if Config.mode.direction == "Vertical" then
+        for x = 0, Config.world.size_x do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == Config.item.platform and tileAbove and tileAbove.fg == 0 then
+                    plantTile(x, y - 1, Config.splice.seed1)
+                    findPathOT(x, y - 1)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    else
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == Config.item.platform and tileAbove and tileAbove.fg == 0 then
+                    plantTile(x, y - 1, Config.splice.seed1)
+                    findPathOT(x, y - 1)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    end
+end
+
+function plantInAirSplice()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    if Config.mode.direction == "Vertical" then
+        for x = 0, Config.world.size_x do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == 0 then
+                    plantTile(x, y, Config.splice.seed1)
+                    findPathOT(x, y)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    else
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == 0 then
+                    plantTile(x, y, Config.splice.seed1)
+                    findPathOT(x, y)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    end
+end
+
+function plantOnPlatSplicemag()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    if Config.mode.direction == "Vertical" then
+        for x = 0, Config.world.size_x do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == Config.item.platform and tileAbove and tileAbove.fg == 0 then
+                    plantTile(x, y - 1, 5640)
+                    findPathOT(x, y - 1)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    else
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == Config.item.platform and tileAbove and tileAbove.fg == 0 then
+                    plantTile(x, y - 1, 5640)
+                    findPathOT(x, y - 1)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    end
+end
+
+function plantInAirSplicemag()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    if Config.mode.direction == "Vertical" then
+        for x = 0, Config.world.size_x do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == 0 then
+                    plantTile(x, y, 5640)
+                    findPathOT(x, y)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    else
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                local tileAbove = getTile(x, y - 1)
+                if tile and tile.fg == 0 then
+                    plantTile(x, y, 5640)
+                    findPathOT(x, y)
+                    local start = os.time()
+                    while os.time() - start < Config.delay.plant / 1000 do end
+                end
+            end
+        end
+    end
+end
+
+function harvestType1()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    local initialTreeCount = fullCountReadyTrees()
+    if initialTreeCount == 0 then
+        return
+    end
+    local harvested = 0
+    local harvestAttempts = 0
+    local maxAttempts = initialTreeCount * 3
+    while harvested < initialTreeCount and harvestAttempts < maxAttempts do
+        harvestAttempts = harvestAttempts + 1
+        if Config.mode.direction == "Horizontal" then
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local start = os.time()
+                while os.time() - start < 0.001 do end
+                for y = startY, endY, stepY do
+                    if stopRequested then return end
+                    local tile = getTile(x, y)
+                    if tile and tile.fg == Config.item.harvest and tile.extra and tile.extra.progress and tile.extra.progress >= 1.0 then
+                        local start = os.time()
+                        while os.time() - start < Config.delay.harvest / 1000 do end
+                        punch(x, y)
+                        findPathHT(x, y)
+                        harvested = harvested + 1
+                    end
+                end
+            end
+        else
+            for y = startY, endY, stepY do
+                if stopRequested then return end
+                local start = os.time()
+                while os.time() - start < 0.001 do end
+                for x = 0, Config.world.size_x do
+                    if stopRequested then return end
+                    local tile = getTile(x, y)
+                    if tile and tile.fg == Config.item.harvest and tile.extra and tile.extra.progress and tile.extra.progress >= 1.0 then
+                        local start = os.time()
+                        while os.time() - start < Config.delay.harvest / 1000 do end
+                        punch(x, y)
+                        findPathHT(x, y)
+                        harvested = harvested + 1
+                    end
+                end
+            end
+        end
+        local remainingTrees = fullCountReadyTrees()
+        if remainingTrees == 0 then
+            break
+        end
+        if harvestAttempts >= maxAttempts then
+            break
+        end
+    end
+end
+
+function harvestType2()
+    local startY, endY, stepY
+    if Config.mode.planting_direction == "BottomToTop" then
+        startY = Config.world.size_y
+        endY = 0
+        stepY = -1
+    else
+        startY = 0
+        endY = Config.world.size_y
+        stepY = 1
+    end
+    local initialTreeCount = fullCountReadyTrees()
+    if initialTreeCount <= 0 then return end
+    local harvested = 0
+    local harvestAttempts = 0
+    local maxAttempts = initialTreeCount * 3
+    while harvested < initialTreeCount and harvestAttempts < maxAttempts do
+        harvestAttempts = harvestAttempts + 1
+        for y = startY, endY, stepY do
+            if stopRequested then return end
+            local start = os.time()
+            while os.time() - start < 0.001 do end
+            for x = 0, Config.world.size_x do
+                if stopRequested then return end
+                local tile = getTile(x, y)
+                if tile and tile.fg == Config.item.harvest and tile.extra and tile.extra.progress and tile.extra.progress >= 1.0 then
+                    local lp = getLocal()
+                    if not lp then
+                        local start = os.time()
+                        while os.time() - start < 0.5 do end
+                        break
+                    end
+                    local localX = math.floor(lp.posX / 32)
+                    local localY = math.floor(lp.posY / 32)
+                    local dy = y - localY
+                    if x < localX and (dy > 6 or dy < -6) then
+                        findPath(x, y)
+                        local start = os.time()
+                        while os.time() - start < Config.delay.harvest / 1000 do end
+                    end
+                    local cur = getTile(x, y)
+                    if cur and cur.fg ~= 0 and getLocal() then
+                        findPath(x, y)
+                        local start = os.time()
+                        while os.time() - start < 0.06 do end
+                        if getLocal() then
+                            punch(x, y)
+                            harvested = harvested + 1
+                            local start = os.time()
+                            while os.time() - start < Config.delay.harvest / 1000 do end
+                        end
+                    end
+                end
+            end
+        end
+        if fullCountReadyTrees() == 0 then
+            break
+        end
+    end
+end
+
+function harvestCrops()
+    if stopRequested then return end
+    local treeCount = fullCountReadyTrees()
+    if treeCount == 0 then
+        return
+    end
+    if Config.mode.harvest_type == 1 then
+        harvestType1()
+    else
+        harvestType2()
+    end
+end
+
+function sprayWorld()
+    if stopRequested then return end
+    local localPlayer = getLocal()
+    if not localPlayer then return end
+    local packet = {
+        type = 3,
+        x = localPlayer.posX,
+        y = localPlayer.posY,
+        px = math.floor(localPlayer.posX / 32),
+        py = math.floor(localPlayer.posY / 32),
+        state = 0,
+        value = 5926,
+        netid = localPlayer.netID
+    }
+    sendPacketRaw(false, packet)
+    sendPacket(2, "action|dialog_return\ndialog_name|world_spray")
+    local start = os.time()
+    while os.time() - start < Config.delay.plant / 1000 do end
+    lastTreeCount = fullCountReadyTrees()
+end
+
+function plantOnly()
+    if Config.mode.order_mode == "PTHT" then
+        local treeCount = fullCountReadyTrees()
+        if treeCount > 0 then
+            if Config.mode.harvest_type == 1 then
+                harvestType1()
+            else
+                harvestType2()
+            end
+        end
+        log("Start Planting")
+        currentStatus = "Planting"
+        if Config.mode.plant_type == "Plat" then
+            plantOnPlat()
+        else
+            plantInAir()
+        end
+        if stopRequested then return end
+        if Config.features.use_uws then
+            sprayWorld()
+        end
+    else
+        if Config.features.use_uws then
+            sprayWorld()
+        end
+        log("Start Planting")
+        currentStatus = "Planting"
+        if Config.mode.plant_type == "Plat" then
+            plantOnPlat()
+        else
+            plantInAir()
+        end
+    end
+end
+
+function harvestOnly()
+    if Config.mode.order_mode == "PTHT" then
+        local treeCount = fullCountReadyTrees()
+        if treeCount > 0 then
+            log("Start Harvesting")
+            currentStatus = "Harvesting"
+            if Config.mode.harvest_type == 1 then
+                harvestType1()
+            else
+                harvestType2()
+            end
+        else
+            log("No ready trees to harvest")
+        end
+    else
+        local treeCount = fullCountReadyTrees()
+        if treeCount > 0 then
+            log("Start Harvesting")
+            currentStatus = "Harvesting"
+            if Config.mode.harvest_type == 1 then
+                harvestType1()
+            else
+                harvestType2()
+            end
+        else
+            log("No ready trees to harvest")
+        end
+        if stopRequested then return end
+        if Config.features.use_uws then
+            sprayWorld()
+        end
+    end
+end
+
+function runSpliceMode()
+    log("Starting Splice Mode...")
+    currentStatus = "Splice Planting"
+    if Config.splice.mode == "Magplant" then
+        plantSpliceWithMagplant()
+    else
+        plantSpliceNormal()
+    end
+    if stopRequested then return end
+    if Config.features.use_uws then
+        sprayWorld()
+    end
+    log("Splice planting completed!")
+end
+
+function runNormalMode()
+    if Config.features.use_splice then
+        runSpliceMode()
+        return
+    end
+    if Config.mode.order_mode == "PTHT" then
+        local treeCount = fullCountReadyTrees()
+        if treeCount > 0 then
+            log("Harvesting ready trees before planting...")
+            currentStatus = "Harvesting"
+            if Config.mode.harvest_type == 1 then
+                harvestType1()
+            else
+                harvestType2()
+            end
+        end
+        log("Start Planting")
+        currentStatus = "Planting"
+        if Config.mode.plant_type == "Plat" then
+            plantOnPlat()
+        else
+            plantInAir()
+        end
+        if stopRequested then return end
+        if Config.features.use_uws then
+            sprayWorld()
+            if stopRequested then return end
+        end
+        treeCount = fullCountReadyTrees()
+        if treeCount > 0 then
+            log("Start Harvesting")
+            currentStatus = "Harvesting"
+            harvestCrops()
+        end
+    else
+        local treeCount = fullCountReadyTrees()
+        if treeCount > 0 then
+            log("Start Harvesting")
+            currentStatus = "Harvesting"
+            harvestCrops()
+            if stopRequested then return end
+        else
+            log("No ready trees to harvest")
+        end
+        log("Start Planting")
+        currentStatus = "Planting"
+        if Config.mode.plant_type == "Plat" then
+            plantOnPlat()
+        else
+            plantInAir()
+        end
+        if stopRequested then return end
+        if Config.features.use_uws then
+            sprayWorld()
+        end
+    end
+end
+
+function runFarmLoop()
+    currentCycle = 0
+    harvestCount = 0
+    stopRequested = false
+    isRunning = true
+    magplantIndex = 1
+    foundMagplants = {}
+    log("Starting PTHT...")
+    while isRunning and not stopRequested do
+        if not isInTargetWorld() then
+            log("Not in target world, reconnecting...")
+            if not reconnect() then
+                log("Reconnect failed, stopping script")
+                break
+            end
+            if Config.features.auto_take_remote then
+                magplantIndex = 1
+            end
+        else
+            if Config.features.auto_take_remote then
+                local start = os.time()
+                while os.time() - start < 3 do end
+                if stopRequested then break end
+                scanForMagplants()
+                takeMagplant()
+            end
+            runNormalMode()
+            currentCycle = currentCycle + 1
+            if Config.features.use_counter and currentCycle >= Config.counter.limit then
+                log("PTHT limit reached: " .. currentCycle)
+                if Config.features.auto_restart then
+                    log("Restarting...")
+                    local start = os.time()
+                    while os.time() - start < 5 do end
+                    currentCycle = 0
+                else
+                    break
+                end
+            end
+            log("PTHT Cycle " .. currentCycle .. " Finished")
+        end
+        local start = os.time()
+        while os.time() - start < 2 do end
+        if stopRequested then break end
+    end
+    isRunning = false
+    stopRequested = false
+    currentStatus = "Idle"
+    log("Script stopped! Final count: "..harvestCount)
+end
+
+function startFarming()
+    if isRunning then
+        log("Already running!")
+        return
+    end
+    isRunning = true
+    stopRequested = false
+    log("Starting PTHT...")
+    runThread(function()
+        runFarmLoop()
+    end)
+end
+
+function stopFarming()
+    stopRequested = true
+    log("Stopping PTHT...")
+end
+
+function startPlantOnly()
+    if isRunning then
+        log("Already running!")
+        return
+    end
+    isRunning = true
+    stopRequested = false
+    log("Starting Plant Only...")
+    runThread(function()
+        stopRequested = false
+        while isRunning and not stopRequested do
+            if not isInTargetWorld() then
+                if not reconnect() then
+                    break
+                end
+                if Config.features.auto_take_remote then
+                    magplantIndex = 1
+                end
+            else
+                if Config.features.auto_take_remote then
+                    local start = os.time()
+                    while os.time() - start < 3 do end
+                    if stopRequested then break end
+                    scanForMagplants()
+                    takeMagplant()
+                end
+                plantOnly()
+                log("Plant Only Finished")
+                break
+            end
+            local start = os.time()
+            while os.time() - start < 2 do end
+            if stopRequested then break end
+        end
+        isRunning = false
+        stopRequested = false
+        currentStatus = "Idle"
+    end)
+end
+
+function startHarvestOnly()
+    if isRunning then
+        log("Already running!")
+        return
+    end
+    isRunning = true
+    stopRequested = false
+    log("Starting Harvest Only...")
+    runThread(function()
+        stopRequested = false
+        while isRunning and not stopRequested do
+            if not isInTargetWorld() then
+                if not reconnect() then
+                    break
+                end
+                if Config.features.auto_take_remote then
+                    magplantIndex = 1
+                end
+            else
+                if Config.features.auto_take_remote then
+                    local start = os.time()
+                    while os.time() - start < 3 do end
+                    if stopRequested then break end
+                    scanForMagplants()
+                    takeMagplant()
+                end
+                harvestOnly()
+                log("Harvest Only Finished")
+                break
+            end
+            local start = os.time()
+            while os.time() - start < 2 do end
+            if stopRequested then break end
+        end
+        isRunning = false
+        stopRequested = false
+        currentStatus = "Idle"
+    end)
+end
+
+function startSpliceOnly()
+    if isRunning then
+        log("Already running!")
+        return
+    end
+    isRunning = true
+    stopRequested = false
+    log("Starting Splice Mode...")
+    runThread(function()
+        stopRequested = false
+        while isRunning and not stopRequested do
+            if not isInTargetWorld() then
+                if not reconnect() then
+                    break
+                end
+                if Config.features.auto_take_remote then
+                    magplantIndex = 1
+                end
+            else
+                if Config.features.auto_take_remote then
+                    local start = os.time()
+                    while os.time() - start < 3 do end
+                    if stopRequested then break end
+                    scanForMagplants()
+                    takeMagplant()
+                end
+                runSpliceMode()
+                log("Splice Mode Finished")
+                break
+            end
+            local start = os.time()
+            while os.time() - start < 2 do end
+            if stopRequested then break end
+        end
+        isRunning = false
+        stopRequested = false
+        currentStatus = "Idle"
+    end)
+end
+
+
+AddHook(function(var)
+    if var.v1 == "OnTalkBubble" and var.v2:find("empty!") then
+        log("Detected empty magplant")
+        runThread(function()
+            local start = os.time()
+            while os.time() - start < 5 do end
+            magplantIndex = magplantIndex + 1
+            takeMagplant()
+        end)
+        return false
+    end
+    return false
+end, "OnVariant")
+
 addHook(function(vtype, name, value)
     local alias, menuId = name:match("(.+)!(%d+)")
     if menuId ~= tostring(randomInt) then return end
     
-    if vtype == 3 then
-        if alias == "btn_stop_script" then
-            stopRequested = true
-            editValue("config_ptht_toggle_start!"..randomInt, false)
-            log("Script stopped by user")
-            return
-        elseif alias == "btn_plant_only" then
-            RunThread(function()
-                startPlantOnly()
-            end)
-            log("Plant Only Started!")
-            return
-        elseif alias == "btn_harvest_only" then
-            RunThread(function()
-                startHarvestOnly()
-            end)
-            log("Harvest Only Started!")
-            return
-        elseif alias == "btn_splice_only" then
-            RunThread(function()
-                startSpliceOnly()
-            end)
-            log("Splice Mode Started!")
-            return
-        elseif alias == "btn_scan_magplants" then
-            RunThread(function()
-                scanForMagplants()
-            end)
-            log("Scanning magplants...")
-            return
-        elseif alias == "btn_take_remote" then
-            RunThread(function()
-                takeMagplant()
-            end)
-            log("Taking magplant...")
-            return
-        elseif alias == "btn_uws_spray" then
-            RunThread(function()
-                sprayWorld()
-            end)
-            log("UWS Spray activated!")
-            return
-        elseif alias == "btn_reconnect" then
-            RunThread(function()
-                reconnect()
-            end)
-            log("Reconnecting...")
-            return
-        elseif alias == "btn_test_seed1" then
-            RunThread(function()
-                local tiles = findTilesWithSeed(Config.splice.seed1)
-                log("Found " .. #tiles .. " tiles with seed1 (ID: " .. Config.splice.seed1 .. ")")
-            end)
-            return
-        end
-    end
-    
     if alias == "config_ptht_toggle_start" then
         if value == true then
             if not isRunning then
-                isRunning = true
-                stopRequested = false
-                RunThread(function()
-                    runFarmLoop()
-                end)
-                log("PTHT Started!")
+                startFarming()
             end
         else
-            if isRunning then
-                stopRequested = true
-                log("Stopping PTHT...")
-            end
+            stopFarming()
         end
         Config.toggle.start = value
         return
     end
     
+    if vtype == 3 then
+        if alias == "btn_stop_script" then
+            stopFarming()
+            editValue("config_ptht_toggle_start!"..randomInt, false)
+            return
+        elseif alias == "btn_plant_only" then
+            startPlantOnly()
+            return
+        elseif alias == "btn_harvest_only" then
+            startHarvestOnly()
+            return
+        elseif alias == "btn_splice_only" then
+            startSpliceOnly()
+            return
+        elseif alias == "btn_scan_magplants" then
+            runThread(scanForMagplants)
+            return
+        elseif alias == "btn_take_remote" then
+            runThread(takeMagplant)
+            return
+        elseif alias == "btn_uws_spray" then
+            sprayWorld()
+            return
+        elseif alias == "btn_reconnect" then
+            reconnect()
+            return
+        elseif alias == "btn_test_seed1" then
+            runThread(function()
+                local tiles = findTilesWithSeed(Config.splice.seed1)
+                log("Found " .. #tiles .. " tiles with seed1")
+            end)
+            return
+        end
+    end
+    
     local category, field = alias:match("config_ptht_(%w+)_(.+)")
     if category and field and Config[category] then
+        Config[category][field] = value
+        
         if category == "mode" then
             if field == "direction" and value == true then
                 editValue("config_ptht_mode_direction_h!"..randomInt, false)
@@ -661,29 +1645,13 @@ addHook(function(vtype, name, value)
             elseif field == "mode_magplant" and value == true then
                 editValue("config_ptht_splice_mode_normal!"..randomInt, false)
                 Config.splice.mode = "Magplant"
-            else
-                Config[category][field] = value
             end
-        else
-            Config[category][field] = value
         end
     end
 end, "onValue")
 
-function updateStatus()
-    currentStatus = isRunning and "Running" or "Idle"
-    if stopRequested and isRunning then
-        currentStatus = "Stopping"
-    end
-    log("Status: " .. currentStatus .. " | Cycle: " .. currentCycle .. " | Trees: " .. lastTreeCount)
-end
-
 addIntoModule(moduleJSON)
-
 log("Grandfuscator PTHT Module Loaded")
-log("Version 3.1")
-
-ChangeValue("ModFly", true)
 
 else
 LogToConsole("`w[`cGrandfuscator`w] Premium Script has expired")
