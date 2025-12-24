@@ -1,4 +1,4 @@
-endtime=load('return os.time{year=2026, month=12, day=1, hour=0,min=0, sec=0}')()
+endtime=load('return os.time{year=2025, month=12, day=30, hour=0,min=0, sec=0}')()
 if(os.time()<endtime) then
 
 
@@ -1358,10 +1358,6 @@ function runFarmLoop()
     while isRunning and not stopRequested do
         if not isInTargetWorld() then
             log("Not in target world, reconnecting...")
-            if not reconnect() then
-                log("Reconnect failed, stopping script")
-                break
-            end
             if Config.features.auto_take_remote then
                 magplantIndex = 1
             end
